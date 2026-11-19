@@ -16,10 +16,7 @@ class KGpsLocatorApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      title: 'kGPS-Locator',
-      home: HomePage(),
-    );
+    return const MaterialApp(title: 'kGPS-Locator', home: HomePage());
   }
 }
 
@@ -62,12 +59,94 @@ class _HomePageState extends State<HomePage> {
     setState(() => navegandoPara = null);
   }
 
-  void adicionarWaypoint() {
-    debugPrint('Voce clicou no botão Add Waypoint');
+  Future<void> adicionarWaypoint() async {
+    if (latitude == null || longitude == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Aguardando posição GPS para cadastrar waypoint.'),
+        ),
+      );
+      return;
+    }
+
+    final formKey = GlobalKey<FormState>();
+    String nomeNovoWaypoint = '';
+    final String? nome = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Novo Waypoint'),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              autofocus: true,
+              maxLength: 40,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Nome',
+                hintText: 'Ex.: Entrada principal',
+                border: OutlineInputBorder(),
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Informe o nome do waypoint';
+                }
+                return null;
+              },
+              onChanged: (value) => nomeNovoWaypoint = value,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  Navigator.of(dialogContext).pop(nomeNovoWaypoint.trim());
+                }
+              },
+              child: const Text('Salvar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted || nome == null) return;
+    final double? latAtual = latitude;
+    final double? lonAtual = longitude;
+    if (latAtual == null || lonAtual == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Posição GPS indisponível.')),
+      );
+      return;
+    }
+
+    final novoWaypoint = Waypoint(
+      nome: nome,
+      latitude: latAtual,
+      longitude: lonAtual,
+    );
+    setState(() => waypoints.add(novoWaypoint));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('Waypoint "$nome" cadastrado.')));
   }
 
   void excluirWaypoint(Waypoint waypoint) {
-    debugPrint('Voce acionou o excluir Waypoint ${waypoint.nome}');
+    setState(() {
+      waypoints.remove(waypoint);
+      if (identical(navegandoPara, waypoint)) {
+        navegandoPara = null;
+      }
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Waypoint "${waypoint.nome}" excluído.'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   Future<void> iniciarGPS() async {
@@ -91,27 +170,28 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
-      gpsSubscription = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 1,
-        ),
-      ).listen(
-        (Position position) {
-          if (!mounted) return;
-          setState(() {
-            latitude = position.latitude;
-            longitude = position.longitude;
-            altitude = position.altitude;
-            gpsStatus = 'GPS ativo';
-          });
-        },
-        onError: (Object error) {
-          if (!mounted) return;
-          setState(() => gpsStatus = 'Erro ao obter localização.');
-          debugPrint('Erro GPS: $error');
-        },
-      );
+      gpsSubscription =
+          Geolocator.getPositionStream(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 1,
+            ),
+          ).listen(
+            (Position position) {
+              if (!mounted) return;
+              setState(() {
+                latitude = position.latitude;
+                longitude = position.longitude;
+                altitude = position.altitude;
+                gpsStatus = 'GPS ativo';
+              });
+            },
+            onError: (Object error) {
+              if (!mounted) return;
+              setState(() => gpsStatus = 'Erro ao obter localização.');
+              debugPrint('Erro GPS: $error');
+            },
+          );
     } catch (error) {
       if (!mounted) return;
       setState(() => gpsStatus = 'Falha ao iniciar GPS.');
@@ -206,12 +286,18 @@ class _HomePageState extends State<HomePage> {
           padding: const EdgeInsets.all(12),
           child: Column(
             children: [
-              _infoRow('Latitude',
-                  latitude == null ? '--' : '${latitude!.toStringAsFixed(6)}°'),
-              _infoRow('Longitude',
-                  longitude == null ? '--' : '${longitude!.toStringAsFixed(6)}°'),
-              _infoRow('Altitude',
-                  altitude == null ? '--' : '${altitude!.toStringAsFixed(1)} m'),
+              _infoRow(
+                'Latitude',
+                latitude == null ? '--' : '${latitude!.toStringAsFixed(6)}°',
+              ),
+              _infoRow(
+                'Longitude',
+                longitude == null ? '--' : '${longitude!.toStringAsFixed(6)}°',
+              ),
+              _infoRow(
+                'Altitude',
+                altitude == null ? '--' : '${altitude!.toStringAsFixed(1)} m',
+              ),
               const SizedBox(height: 8),
               Text(gpsStatus),
               const SizedBox(height: 8),
@@ -230,7 +316,10 @@ class _HomePageState extends State<HomePage> {
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            const Text('NAVEGANDO PARA', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'NAVEGANDO PARA',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 4),
             Text(navegandoPara!.nome, style: const TextStyle(fontSize: 20)),
             const SizedBox(height: 4),
@@ -247,17 +336,14 @@ class _HomePageState extends State<HomePage> {
       itemBuilder: (context, index) {
         final waypoint = waypoints[index];
         return Dismissible(
-          key: ValueKey(waypoint.nome),
+          key: ObjectKey(waypoint),
           direction: DismissDirection.endToStart,
           background: Container(
             alignment: Alignment.centerRight,
             padding: const EdgeInsets.only(right: 20),
             child: const Icon(Icons.delete, size: 30),
           ),
-          confirmDismiss: (_) async {
-            excluirWaypoint(waypoint);
-            return false; // Nesta fase a exclusão é apenas simulada.
-          },
+          onDismissed: (_) => excluirWaypoint(waypoint),
           child: ListTile(
             leading: const Icon(Icons.location_on),
             title: Text(waypoint.nome),
